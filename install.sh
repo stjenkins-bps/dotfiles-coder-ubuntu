@@ -1,0 +1,276 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Install Ubuntu packages, tools, and symlink dotfiles from this repo into $HOME
+DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Determine which user/home to configure (supports running via sudo)
+if [[ -n "${SUDO_USER-}" && "${SUDO_USER}" != "root" ]]; then
+  TARGET_USER="$SUDO_USER"
+  TARGET_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6 || echo "/home/$SUDO_USER")"
+else
+  TARGET_USER="${USER:-$LOGNAME}"
+  TARGET_HOME="${HOME:-/home/$TARGET_USER}"
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+
+install_repos_and_packages() {
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "apt-get not found; skipping Ubuntu package install" >&2
+    return
+  fi
+
+  echo "==> Updating apt..."
+  sudo apt-get update -y
+
+  echo "==> Installing prerequisites..."
+  sudo apt-get install -y \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release \
+    software-properties-common \
+    apt-transport-https
+
+  echo "==> Adding Microsoft apt repo (Azure CLI, PowerShell)..."
+  curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+    | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/microsoft.gpg || true
+  AZ_REPO="$(lsb_release -cs)"
+  echo "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli $AZ_REPO main" \
+    | sudo tee /etc/apt/sources.list.d/azure-cli.list >/dev/null || true
+  # PowerShell
+  curl -fsSL "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb" \
+    -o /tmp/packages-microsoft-prod.deb && sudo dpkg -i /tmp/packages-microsoft-prod.deb || true
+
+  echo "==> Adding HashiCorp apt repo (Terraform, Packer)..."
+  curl -fsSL https://apt.releases.hashicorp.com/gpg \
+    | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg || true
+  echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
+    | sudo tee /etc/apt/sources.list.d/hashicorp.list >/dev/null || true
+
+  echo "==> Adding Kubernetes apt repo (kubectl)..."
+  curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key \
+    | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg || true
+  echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /" \
+    | sudo tee /etc/apt/sources.list.d/kubernetes.list >/dev/null || true
+
+  echo "==> Adding Docker apt repo..."
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+    | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg || true
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] \
+https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+    | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null || true
+
+  sudo apt-get update -y
+
+  echo "==> Installing base packages (core tools)..."
+  sudo apt-get install -y \
+    wget \
+    openssl \
+    zsh \
+    git \
+    neovim \
+    p7zip-full \
+    unzip \
+    btop \
+    jq \
+    nmap \
+    ripgrep \
+    zoxide
+
+  echo "==> Installing Kubernetes / Helm tools (optional)..."
+  sudo apt-get install -y kubectl || true
+  # k9s – not in standard apt; install via binary
+  install_k9s || true
+  # helm – install via official script
+  if ! command -v helm >/dev/null 2>&1; then
+    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash || true
+  fi
+
+  echo "==> Installing Azure CLI (optional)..."
+  sudo apt-get install -y azure-cli || true
+
+  echo "==> Installing PowerShell (optional)..."
+  sudo apt-get install -y powershell || true
+
+  echo "==> Installing HashiCorp tools (packer, terraform)..."
+  sudo apt-get install -y packer terraform || true
+
+  echo "==> Installing Docker Engine..."
+  sudo apt-get install -y \
+    docker-ce docker-ce-cli containerd.io \
+    docker-buildx-plugin docker-compose-plugin || true
+  sudo usermod -aG docker "$TARGET_USER" || true
+
+  echo "==> Installing zellij (from GitHub releases)..."
+  install_zellij || true
+
+  echo "==> Installing lsd (from GitHub releases)..."
+  install_lsd || true
+
+  echo "==> Installing Azure AKS CLI (az aks)..."
+  if command -v az >/dev/null 2>&1; then
+    sudo az aks install-cli || true
+  fi
+}
+
+install_k9s() {
+  if command -v k9s >/dev/null 2>&1; then return; fi
+  local tag
+  tag="$(curl -fsSL https://api.github.com/repos/derailed/k9s/releases/latest \
+    | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
+  [[ -z "$tag" ]] && return
+  curl -fsSL "https://github.com/derailed/k9s/releases/download/$tag/k9s_linux_amd64.deb" \
+    -o /tmp/k9s.deb && sudo dpkg -i /tmp/k9s.deb || true
+}
+
+install_zellij() {
+  if command -v zellij >/dev/null 2>&1; then return; fi
+  local tag
+  tag="$(curl -fsSL https://api.github.com/repos/zellij-org/zellij/releases/latest \
+    | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
+  [[ -z "$tag" ]] && return
+  curl -fsSL "https://github.com/zellij-org/zellij/releases/download/$tag/zellij-x86_64-unknown-linux-musl.tar.gz" \
+    | sudo tar -xz -C /usr/local/bin zellij || true
+  sudo chmod +x /usr/local/bin/zellij || true
+}
+
+install_lsd() {
+  if command -v lsd >/dev/null 2>&1; then return; fi
+  local tag
+  tag="$(curl -fsSL https://api.github.com/repos/lsd-rs/lsd/releases/latest \
+    | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
+  [[ -z "$tag" ]] && return
+  curl -fsSL "https://github.com/lsd-rs/lsd/releases/download/$tag/lsd_${tag#v}_amd64.deb" \
+    -o /tmp/lsd.deb && sudo dpkg -i /tmp/lsd.deb || true
+}
+
+install_tools_and_shell() {
+  echo "==> Installing NVM, Node, and GitHub Copilot CLI (if needed)..."
+  if [[ ! -d "$TARGET_HOME/.nvm" ]]; then
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash || true
+  fi
+
+  export NVM_DIR="$TARGET_HOME/.nvm"
+  [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+  if command -v npm >/dev/null 2>&1; then
+    echo "==> Installing @github/copilot globally with sudo (system prefix)..."
+    if ! sudo npm install -g @github/copilot; then
+      echo "WARN: 'sudo npm install -g @github/copilot' failed; run it manually if needed." >&2
+    fi
+  fi
+
+  echo "==> Installing talosctl..."
+  if ! command -v talosctl >/dev/null 2>&1; then
+    curl -sL https://talos.dev/install | sh || true
+  fi
+
+  echo "==> Installing zsh plugins (powerlevel10k, zsh-vi-mode)..."
+  if [[ ! -d "$TARGET_HOME/powerlevel10k" ]]; then
+    git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "$TARGET_HOME/powerlevel10k" || true
+  fi
+  if [[ ! -d "$TARGET_HOME/.zsh-vi-mode" ]]; then
+    git clone https://github.com/jeffreytse/zsh-vi-mode.git "$TARGET_HOME/.zsh-vi-mode" || true
+  fi
+
+  if command -v zsh >/dev/null 2>&1; then
+    local zsh_path
+    zsh_path="$(command -v zsh)"
+    echo -n "Set default shell to $zsh_path for user $TARGET_USER? [y/N]: "
+    read -r ans
+    if [[ "$ans" =~ ^[Yy]$ ]]; then
+      echo "==> Changing default shell to $zsh_path for $TARGET_USER (you may be prompted for your password)..."
+      local shell_changed=0
+      if chsh -s "$zsh_path" "$TARGET_USER" 2>/dev/null; then
+        shell_changed=1
+      elif command -v sudo >/dev/null 2>&1 && sudo chsh -s "$zsh_path" "$TARGET_USER"; then
+        shell_changed=1
+      else
+        echo "WARN: Failed to change default shell; run 'chsh -s $zsh_path $TARGET_USER' (or with sudo) manually." >&2
+      fi
+      echo "Starting a new zsh login shell..."
+      exec "$zsh_path" -l
+    else
+      echo "Skipping default shell change; you can run 'chsh -s $zsh_path' later."
+    fi
+  fi
+}
+
+install_fonts() {
+  echo "==> Installing Hack Nerd Font (nerd font for terminal + icons)..."
+  local font_dir="$TARGET_HOME/.local/share/fonts"
+  mkdir -p "$font_dir"
+  if ! ls "$font_dir"/*Hack*Nerd*Font* >/dev/null 2>&1; then
+    local tmpdir
+    tmpdir="$(mktemp -d)"
+    if curl -fLo "$tmpdir/Hack.zip" https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Hack.zip; then
+      unzip -o "$tmpdir/Hack.zip" -d "$font_dir" >/dev/null 2>&1 || true
+    fi
+    rm -rf "$tmpdir"
+    if command -v fc-cache >/dev/null 2>&1; then
+      fc-cache -f "$font_dir" || true
+    fi
+  fi
+}
+
+link() {
+  local src="$1" dst="$2"
+  echo "Linking $dst -> $src"
+  mkdir -p "$(dirname "$dst")"
+  ln -sfn "$src" "$dst"
+}
+
+# Top-level dotfiles
+link "$DOTFILES_DIR/home/.zshrc" "$TARGET_HOME/.zshrc"
+
+# Optional Git config
+if [[ -f "$DOTFILES_DIR/home/.gitconfig" ]]; then
+  echo -n "Configure global Git for this user from this repo? [y/N]: "
+  read -r ans
+  if [[ "$ans" =~ ^[Yy]$ ]]; then
+    echo -n "  Git user.name  (e.g. jdoe): "
+    read -r git_name
+    echo -n "  Git user.email (e.g. jdoe@example.com): "
+    read -r git_email
+
+    tmp_gitcfg="$(mktemp)"
+    cp "$DOTFILES_DIR/home/.gitconfig" "$tmp_gitcfg"
+
+    git config -f "$tmp_gitcfg" user.name "$git_name"
+    git config -f "$tmp_gitcfg" user.email "$git_email"
+
+    link "$tmp_gitcfg" "$TARGET_HOME/.gitconfig"
+  else
+    echo "Skipping Git config; existing ~/.gitconfig left untouched."
+  fi
+fi
+
+if [[ -f "$DOTFILES_DIR/home/.p10k.zsh" ]]; then
+  link "$DOTFILES_DIR/home/.p10k.zsh" "$TARGET_HOME/.p10k.zsh"
+fi
+
+# SSH config (GitHub-only config, no keys)
+if [[ -f "$DOTFILES_DIR/home/.ssh/config" ]]; then
+  echo -n "Apply SSH config for GitHub (~/.ssh/config) from this repo? [y/N]: "
+  read -r ans
+  if [[ "$ans" =~ ^[Yy]$ ]]; then
+    link "$DOTFILES_DIR/home/.ssh/config" "$TARGET_HOME/.ssh/config"
+  else
+    echo "Skipping SSH config; existing ~/.ssh/config left untouched."
+  fi
+fi
+
+# ~/.config subdirectories
+for dir in nvim ghostty zellij lsd; do
+  if [[ -d "$DOTFILES_DIR/config/$dir" ]]; then
+    link "$DOTFILES_DIR/config/$dir" "$TARGET_HOME/.config/$dir"
+  fi
+done
+
+echo "Done. Your dotfiles are now linked into $HOME from $DOTFILES_DIR."
+
+install_repos_and_packages
+install_tools_and_shell
+install_fonts

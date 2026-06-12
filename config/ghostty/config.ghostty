@@ -1,0 +1,17 @@
+# General Config
+theme = "3024 Night"
+term = "xterm-256color"
+font-family = "Hack Nerd Font"
+window-decoration = false
+
+# Pan Control – split panes with Super+Shift+vim direction
+keybind = ctrl+shift+h=new_split:left
+keybind = ctrl+shift+l=new_split:right
+keybind = ctrl+shift+k=new_split:up
+keybind = ctrl+shift+j=new_split:down
+
+# Pane Movement – move focus with Super+Ctrl+vim direction
+keybind = alt+ctrl+h=goto_split:left
+keybind = alt+ctrl+l=goto_split:right
+keybind = alt+ctrl+k=goto_split:up
+keybind = alt+ctrl+j=goto_split:down
