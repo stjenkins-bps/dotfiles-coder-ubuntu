@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Install Ubuntu packages, tools, and symlink dotfiles from this repo into $HOME
+# Install portable tools and symlink dotfiles from this repo into $HOME
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Determine which user/home to configure (supports running via sudo)
@@ -12,139 +12,6 @@ else
   TARGET_USER="${USER:-$LOGNAME}"
   TARGET_HOME="${HOME:-/home/$TARGET_USER}"
 fi
-
-export DEBIAN_FRONTEND=noninteractive
-
-install_repos_and_packages() {
-  if ! command -v apt-get >/dev/null 2>&1; then
-    echo "apt-get not found; skipping Ubuntu package install" >&2
-    return
-  fi
-
-  echo "==> Updating apt..."
-  sudo apt-get update -y
-
-  echo "==> Installing prerequisites..."
-  sudo apt-get install -y \
-    ca-certificates \
-    curl \
-    gnupg \
-    lsb-release \
-    software-properties-common \
-    apt-transport-https
-
-  echo "==> Adding Microsoft apt repo (Azure CLI, PowerShell)..."
-  curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
-    | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/microsoft.gpg || true
-  AZ_REPO="$(lsb_release -cs)"
-  echo "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli $AZ_REPO main" \
-    | sudo tee /etc/apt/sources.list.d/azure-cli.list >/dev/null || true
-  # PowerShell
-  curl -fsSL "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb" \
-    -o /tmp/packages-microsoft-prod.deb && sudo dpkg -i /tmp/packages-microsoft-prod.deb || true
-
-  echo "==> Adding HashiCorp apt repo (Terraform, Packer)..."
-  curl -fsSL https://apt.releases.hashicorp.com/gpg \
-    | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg || true
-  echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
-    | sudo tee /etc/apt/sources.list.d/hashicorp.list >/dev/null || true
-
-  echo "==> Adding Kubernetes apt repo (kubectl)..."
-  curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key \
-    | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg || true
-  echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /" \
-    | sudo tee /etc/apt/sources.list.d/kubernetes.list >/dev/null || true
-
-  echo "==> Adding Docker apt repo..."
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-    | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg || true
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] \
-https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
-    | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null || true
-
-  sudo apt-get update -y
-
-  echo "==> Installing base packages (core tools)..."
-  sudo apt-get install -y \
-    wget \
-    openssl \
-    zsh \
-    git \
-    neovim \
-    p7zip-full \
-    unzip \
-    btop \
-    jq \
-    nmap \
-    ripgrep \
-    zoxide
-
-  echo "==> Installing Kubernetes / Helm tools (optional)..."
-  sudo apt-get install -y kubectl || true
-  # k9s – not in standard apt; install via binary
-  install_k9s || true
-  # helm – install via official script
-  if ! command -v helm >/dev/null 2>&1; then
-    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash || true
-  fi
-
-  echo "==> Installing Azure CLI (optional)..."
-  sudo apt-get install -y azure-cli || true
-
-  echo "==> Installing PowerShell (optional)..."
-  sudo apt-get install -y powershell || true
-
-  echo "==> Installing HashiCorp tools (packer, terraform)..."
-  sudo apt-get install -y packer terraform || true
-
-  echo "==> Installing Docker Engine..."
-  sudo apt-get install -y \
-    docker-ce docker-ce-cli containerd.io \
-    docker-buildx-plugin docker-compose-plugin || true
-  sudo usermod -aG docker "$TARGET_USER" || true
-
-  echo "==> Installing zellij (from GitHub releases)..."
-  install_zellij || true
-
-  echo "==> Installing lsd (from GitHub releases)..."
-  install_lsd || true
-
-  echo "==> Installing Azure AKS CLI (az aks)..."
-  if command -v az >/dev/null 2>&1; then
-    sudo az aks install-cli || true
-  fi
-}
-
-install_k9s() {
-  if command -v k9s >/dev/null 2>&1; then return; fi
-  local tag
-  tag="$(curl -fsSL https://api.github.com/repos/derailed/k9s/releases/latest \
-    | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
-  [[ -z "$tag" ]] && return
-  curl -fsSL "https://github.com/derailed/k9s/releases/download/$tag/k9s_linux_amd64.deb" \
-    -o /tmp/k9s.deb && sudo dpkg -i /tmp/k9s.deb || true
-}
-
-install_zellij() {
-  if command -v zellij >/dev/null 2>&1; then return; fi
-  local tag
-  tag="$(curl -fsSL https://api.github.com/repos/zellij-org/zellij/releases/latest \
-    | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
-  [[ -z "$tag" ]] && return
-  curl -fsSL "https://github.com/zellij-org/zellij/releases/download/$tag/zellij-x86_64-unknown-linux-musl.tar.gz" \
-    | sudo tar -xz -C /usr/local/bin zellij || true
-  sudo chmod +x /usr/local/bin/zellij || true
-}
-
-install_lsd() {
-  if command -v lsd >/dev/null 2>&1; then return; fi
-  local tag
-  tag="$(curl -fsSL https://api.github.com/repos/lsd-rs/lsd/releases/latest \
-    | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
-  [[ -z "$tag" ]] && return
-  curl -fsSL "https://github.com/lsd-rs/lsd/releases/download/$tag/lsd_${tag#v}_amd64.deb" \
-    -o /tmp/lsd.deb && sudo dpkg -i /tmp/lsd.deb || true
-}
 
 install_tools_and_shell() {
   echo "==> Installing NVM, Node, and GitHub Copilot CLI (if needed)..."
@@ -160,6 +27,23 @@ install_tools_and_shell() {
     if ! sudo npm install -g @github/copilot; then
       echo "WARN: 'sudo npm install -g @github/copilot' failed; run it manually if needed." >&2
     fi
+  fi
+
+  echo "==> Installing Coder CLI..."
+  if ! command -v coder >/dev/null 2>&1; then
+    if ! curl -L https://coder.com/install.sh | sh; then
+      echo "WARN: Coder CLI installation failed; run 'curl -L https://coder.com/install.sh | sh' manually." >&2
+    fi
+  fi
+
+  echo "==> Installing Helm..."
+  if ! command -v helm >/dev/null 2>&1; then
+    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash || true
+  fi
+
+  echo "==> Installing Azure AKS CLI..."
+  if command -v az >/dev/null 2>&1; then
+    sudo az aks install-cli || true
   fi
 
   echo "==> Installing talosctl..."
@@ -263,7 +147,7 @@ if [[ -f "$DOTFILES_DIR/home/.ssh/config" ]]; then
 fi
 
 # ~/.config subdirectories
-for dir in nvim ghostty zellij lsd; do
+for dir in nvim lsd; do
   if [[ -d "$DOTFILES_DIR/config/$dir" ]]; then
     link "$DOTFILES_DIR/config/$dir" "$TARGET_HOME/.config/$dir"
   fi
@@ -271,6 +155,5 @@ done
 
 echo "Done. Your dotfiles are now linked into $HOME from $DOTFILES_DIR."
 
-install_repos_and_packages
 install_tools_and_shell
 install_fonts
