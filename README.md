@@ -15,7 +15,7 @@ bash install.sh
 ```
 
 This will:
-- install portable tools (AKS CLI, Coder CLI, Helm, talosctl, NVM + GitHub Copilot CLI, zsh plugins),
+- install portable tools (AKS CLI, Coder CLI, Helm, Herdr, talosctl, NVM + GitHub Copilot CLI, zsh plugins),
 - install Hack Nerd Font into your user font directory for terminal/icons, and
 - (re)symlink the tracked dotfiles into your `$HOME` and `~/.config` based on this repo's contents.
 

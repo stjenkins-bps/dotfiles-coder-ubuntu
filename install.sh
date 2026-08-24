@@ -51,6 +51,14 @@ install_tools_and_shell() {
     fi
   fi
 
+  echo "==> Installing Herdr..."
+  if ! command -v herdr >/dev/null 2>&1; then
+    if ! curl -fsSL https://herdr.dev/install.sh \
+      | HERDR_INSTALL_DIR="$user_bin" sh; then
+      echo "WARN: Herdr installation failed." >&2
+    fi
+  fi
+
   echo "==> Installing Helm..."
   if ! command -v helm >/dev/null 2>&1; then
     curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
