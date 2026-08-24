@@ -19,4 +19,4 @@ This will:
 - install Hack Nerd Font into your user font directory for terminal/icons, and
 - (re)symlink the tracked dotfiles into your `$HOME` and `~/.config` based on this repo's contents.
 
-Install the packages in `os-requirements.txt` with the system package manager first. The script may prompt for `sudo` where needed.
+Install the packages in `os-requirements.txt` with the system package manager first. Portable binaries are installed in `~/.local/bin` without `sudo`.

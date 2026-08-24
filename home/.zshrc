@@ -27,6 +27,7 @@ source ~/.zsh-vi-mode/zsh-vi-mode.plugin.zsh
 # Custom exports
 export EDITOR=nvim
 export KUBE_EDITOR=nvim
+export PATH="$HOME/.local/bin:$PATH"
 
 # Aliases
 alias tf='terraform'
@@ -40,6 +41,12 @@ alias tree='lsd --tree --icon always'
 alias wtree='watch --color "lsd --tree --icon always --color=always"'
 alias wgits='watch --color "git -c color.status=true status -s "'
 
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+if [[ -z "${NVM_DIR:-}" ]]; then
+  if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
+    export NVM_DIR="$HOME/.nvm"
+  elif [[ -s /usr/local/nvm/nvm.sh ]]; then
+    export NVM_DIR=/usr/local/nvm
+  fi
+fi
+[ -n "${NVM_DIR:-}" ] && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -n "${NVM_DIR:-}" ] && [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"

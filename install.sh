@@ -14,41 +14,60 @@ else
 fi
 
 install_tools_and_shell() {
+  local user_bin="$TARGET_HOME/.local/bin"
+  mkdir -p "$user_bin"
+  export PATH="$user_bin:$PATH"
+
   echo "==> Installing NVM, Node, and GitHub Copilot CLI (if needed)..."
-  if [[ ! -d "$TARGET_HOME/.nvm" ]]; then
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash || true
+  if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+    if [[ -n "${NVM_DIR:-}" && -s "$NVM_DIR/nvm.sh" ]]; then
+      . "$NVM_DIR/nvm.sh"
+    elif [[ -s "$TARGET_HOME/.nvm/nvm.sh" ]]; then
+      export NVM_DIR="$TARGET_HOME/.nvm"
+      . "$NVM_DIR/nvm.sh"
+    elif [[ -s /usr/local/nvm/nvm.sh ]]; then
+      export NVM_DIR=/usr/local/nvm
+      . "$NVM_DIR/nvm.sh"
+    else
+      export NVM_DIR="$TARGET_HOME/.nvm"
+      curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh \
+        | PROFILE=/dev/null NVM_DIR="$NVM_DIR" bash
+      . "$NVM_DIR/nvm.sh"
+    fi
   fi
 
-  export NVM_DIR="$TARGET_HOME/.nvm"
-  [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-
-  if command -v npm >/dev/null 2>&1; then
-    echo "==> Installing @github/copilot globally with sudo (system prefix)..."
-    if ! sudo npm install -g @github/copilot; then
-      echo "WARN: 'sudo npm install -g @github/copilot' failed; run it manually if needed." >&2
+  if command -v npm >/dev/null 2>&1 && ! command -v copilot >/dev/null 2>&1; then
+    echo "==> Installing GitHub Copilot CLI for the current user..."
+    if ! npm install --global --prefix "$TARGET_HOME/.local" @github/copilot; then
+      echo "WARN: GitHub Copilot CLI installation failed." >&2
     fi
   fi
 
   echo "==> Installing Coder CLI..."
   if ! command -v coder >/dev/null 2>&1; then
-    if ! curl -L https://coder.com/install.sh | sh; then
-      echo "WARN: Coder CLI installation failed; run 'curl -L https://coder.com/install.sh | sh' manually." >&2
+    if ! curl -L https://coder.com/install.sh \
+      | sh -s -- --method standalone --prefix "$TARGET_HOME/.local"; then
+      echo "WARN: Coder CLI installation failed." >&2
     fi
   fi
 
   echo "==> Installing Helm..."
   if ! command -v helm >/dev/null 2>&1; then
-    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash || true
+    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
+      | HELM_INSTALL_DIR="$user_bin" USE_SUDO=false bash || true
   fi
 
   echo "==> Installing Azure AKS CLI..."
-  if command -v az >/dev/null 2>&1; then
-    sudo az aks install-cli || true
+  if command -v az >/dev/null 2>&1 \
+    && { ! command -v kubectl >/dev/null 2>&1 || ! command -v kubelogin >/dev/null 2>&1; }; then
+    az aks install-cli \
+      --install-location "$user_bin/kubectl" \
+      --kubelogin-install-location "$user_bin/kubelogin" || true
   fi
 
   echo "==> Installing talosctl..."
   if ! command -v talosctl >/dev/null 2>&1; then
-    curl -sL https://talos.dev/install | sh || true
+    curl -sL https://talos.dev/install | INSTALLPATH="$user_bin" sh || true
   fi
 
   echo "==> Installing zsh plugins (powerlevel10k, zsh-vi-mode)..."
