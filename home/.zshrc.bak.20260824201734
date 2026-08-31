@@ -27,7 +27,7 @@ source ~/.zsh-vi-mode/zsh-vi-mode.plugin.zsh
 # Custom exports
 export EDITOR=nvim
 export KUBE_EDITOR=nvim
-export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
 
 # Aliases
 alias tf='terraform'
@@ -51,9 +51,5 @@ fi
 [ -n "${NVM_DIR:-}" ] && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 [ -n "${NVM_DIR:-}" ] && [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 
-# Execute Herdr (only when attached to a real interactive terminal;
-# herdr panics without a TTY, which was crashing non-interactive/
-# shell-integration login paths).
-if [[ -t 0 && -t 1 ]]; then
-  herdr
-fi
+# Execute Herdr
+herdr

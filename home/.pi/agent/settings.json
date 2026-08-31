@@ -1,0 +1,11 @@
+{
+  "theme": "dark",
+  "defaultProvider": "github-copilot",
+  "defaultModel": "gpt-5.4",
+  "packages": [
+    "npm:pi-web-access",
+    "npm:pi-subagents",
+    "npm:pi-memory",
+    "npm:@sting8k/pi-vcc"
+  ]
+}

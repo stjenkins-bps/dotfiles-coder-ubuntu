@@ -15,8 +15,10 @@ fi
 
 install_tools_and_shell() {
   local user_bin="$TARGET_HOME/.local/bin"
-  mkdir -p "$user_bin"
-  export PATH="$user_bin:$PATH"
+  local npm_global="$TARGET_HOME/.npm-global"
+  local user_npmrc="$TARGET_HOME/.npmrc"
+  mkdir -p "$user_bin" "$npm_global/bin"
+  export PATH="$npm_global/bin:$user_bin:$PATH"
 
   echo "==> Installing NVM, Node, and GitHub Copilot CLI (if needed)..."
   if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
@@ -36,10 +38,66 @@ install_tools_and_shell() {
     fi
   fi
 
-  if command -v npm >/dev/null 2>&1 && ! command -v copilot >/dev/null 2>&1; then
-    echo "==> Installing GitHub Copilot CLI for the current user..."
-    if ! npm install --global --prefix "$TARGET_HOME/.local" @github/copilot; then
-      echo "WARN: GitHub Copilot CLI installation failed." >&2
+  if command -v npm >/dev/null 2>&1; then
+    echo "==> Configuring npm global prefix in $user_npmrc..."
+    if [[ -f "$user_npmrc" ]]; then
+      python3 - "$user_npmrc" "$npm_global" <<'PY'
+from pathlib import Path
+import sys
+
+npmrc = Path(sys.argv[1])
+prefix = sys.argv[2]
+lines = npmrc.read_text().splitlines()
+updated = False
+result = []
+for line in lines:
+    if line.strip().startswith("prefix="):
+        if not updated:
+            result.append(f"prefix={prefix}")
+            updated = True
+    else:
+        result.append(line)
+if not updated:
+    result.append(f"prefix={prefix}")
+npmrc.write_text("\n".join(result) + "\n")
+PY
+    else
+      printf 'prefix=%s\n' "$npm_global" > "$user_npmrc"
+    fi
+
+    if ! command -v copilot >/dev/null 2>&1; then
+      echo "==> Installing GitHub Copilot CLI for the current user..."
+      if ! npm install -g @github/copilot; then
+        echo "WARN: GitHub Copilot CLI installation failed." >&2
+      fi
+    fi
+
+    if ! npm list -g --depth=0 @earendil-works/pi-coding-agent >/dev/null 2>&1; then
+      echo "==> Installing pi-coding-agent for the current user..."
+      if ! npm install -g @earendil-works/pi-coding-agent; then
+        echo "WARN: pi-coding-agent installation failed." >&2
+      fi
+    fi
+
+    if ! npm list -g --depth=0 @tobilu/qmd >/dev/null 2>&1; then
+      echo "==> Installing qmd for pi-memory search..."
+      if ! npm install -g @tobilu/qmd; then
+        echo "WARN: qmd installation failed." >&2
+      fi
+    fi
+
+    if command -v qmd >/dev/null 2>&1; then
+      local pi_memory_dir="$TARGET_HOME/.pi/agent/memory"
+      mkdir -p "$pi_memory_dir/daily" "$pi_memory_dir/recovery"
+      touch "$pi_memory_dir/MEMORY.md" "$pi_memory_dir/SCRATCHPAD.md"
+
+      echo "==> Initializing qmd collection for pi-memory..."
+      qmd collection add "$pi_memory_dir" --name pi-memory >/dev/null 2>&1 || true
+      qmd context add /daily "Daily append-only work logs organized by date" -c pi-memory >/dev/null 2>&1 || true
+      qmd context add / "Curated long-term memory: decisions, preferences, facts, lessons" -c pi-memory >/dev/null 2>&1 || true
+
+      echo "==> Building initial pi-memory embeddings (may take a minute on first run)..."
+      qmd embed -c pi-memory >/dev/null 2>&1 || true
     fi
   fi
 
@@ -135,6 +193,17 @@ link() {
 
 # Top-level dotfiles
 link "$DOTFILES_DIR/home/.zshrc" "$TARGET_HOME/.zshrc"
+
+# Pi agent config
+if [[ -f "$DOTFILES_DIR/home/.pi/agent/settings.json" ]]; then
+  link "$DOTFILES_DIR/home/.pi/agent/settings.json" "$TARGET_HOME/.pi/agent/settings.json"
+fi
+if [[ -f "$DOTFILES_DIR/home/.pi/agent/pi-vcc-config.json" ]]; then
+  link "$DOTFILES_DIR/home/.pi/agent/pi-vcc-config.json" "$TARGET_HOME/.pi/agent/pi-vcc-config.json"
+fi
+if [[ -f "$DOTFILES_DIR/home/.pi/web-search.json" ]]; then
+  link "$DOTFILES_DIR/home/.pi/web-search.json" "$TARGET_HOME/.pi/web-search.json"
+fi
 
 # Optional Git config
 if [[ -f "$DOTFILES_DIR/home/.gitconfig" ]]; then
