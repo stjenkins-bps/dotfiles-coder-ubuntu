@@ -12,6 +12,7 @@ neovim
 p7zip-full
 unzip
 btop
+fd-find
 jq
 nmap
 ripgrep
