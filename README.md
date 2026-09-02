@@ -16,11 +16,11 @@ bash install.sh
 
 This will:
 - install portable tools (AKS CLI, Coder CLI, Helm, Herdr, talosctl, NVM + GitHub Copilot CLI, pi-coding-agent, qmd, zsh plugins),
-- configure npm global installs to use `~/.npm-global` via `~/.npmrc`,
+- install npm global packages into `~/.npm-global` using per-command `npm --prefix` installs,
 - install Hack Nerd Font into your user font directory for terminal/icons, and
-- (re)symlink the tracked dotfiles into your `$HOME` and `~/.config` based on this repo's contents, including Pi agent settings under `~/.pi`.
+- manage the tracked dotfiles into your `$HOME` and `~/.config` with GNU Stow, including Pi agent settings under `~/.pi`.
 
-Install the packages in `os-requirements.txt` with the system package manager first. Portable binaries are installed in `~/.local/bin` without `sudo`.
+Install the packages in `os-requirements.txt` with the system package manager first. This includes `stow`, which `install.sh` uses to link the tracked dotfiles. Portable binaries are installed in `~/.local/bin` without `sudo`.
 
 ## Pi agent
 Tracked Pi config in `home/.pi/` currently includes:

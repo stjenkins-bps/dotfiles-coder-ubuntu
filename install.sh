@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Install portable tools and symlink dotfiles from this repo into $HOME
+# Install portable tools and manage dotfiles from this repo with GNU Stow
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Determine which user/home to configure (supports running via sudo)
@@ -16,7 +16,6 @@ fi
 install_tools_and_shell() {
   local user_bin="$TARGET_HOME/.local/bin"
   local npm_global="$TARGET_HOME/.npm-global"
-  local user_npmrc="$TARGET_HOME/.npmrc"
   mkdir -p "$user_bin" "$npm_global/bin"
   export PATH="$npm_global/bin:$user_bin:$PATH"
 
@@ -39,49 +38,25 @@ install_tools_and_shell() {
   fi
 
   if command -v npm >/dev/null 2>&1; then
-    echo "==> Configuring npm global prefix in $user_npmrc..."
-    if [[ -f "$user_npmrc" ]]; then
-      python3 - "$user_npmrc" "$npm_global" <<'PY'
-from pathlib import Path
-import sys
-
-npmrc = Path(sys.argv[1])
-prefix = sys.argv[2]
-lines = npmrc.read_text().splitlines()
-updated = False
-result = []
-for line in lines:
-    if line.strip().startswith("prefix="):
-        if not updated:
-            result.append(f"prefix={prefix}")
-            updated = True
-    else:
-        result.append(line)
-if not updated:
-    result.append(f"prefix={prefix}")
-npmrc.write_text("\n".join(result) + "\n")
-PY
-    else
-      printf 'prefix=%s\n' "$npm_global" > "$user_npmrc"
-    fi
+    echo "==> Using npm prefix $npm_global for user-scoped global installs..."
 
     if ! command -v copilot >/dev/null 2>&1; then
       echo "==> Installing GitHub Copilot CLI for the current user..."
-      if ! npm install -g @github/copilot; then
+      if ! npm --prefix "$npm_global" install -g @github/copilot; then
         echo "WARN: GitHub Copilot CLI installation failed." >&2
       fi
     fi
 
-    if ! npm list -g --depth=0 @earendil-works/pi-coding-agent >/dev/null 2>&1; then
+    if ! npm --prefix "$npm_global" list -g --depth=0 @earendil-works/pi-coding-agent >/dev/null 2>&1; then
       echo "==> Installing pi-coding-agent for the current user..."
-      if ! npm install -g @earendil-works/pi-coding-agent; then
+      if ! npm --prefix "$npm_global" install -g @earendil-works/pi-coding-agent; then
         echo "WARN: pi-coding-agent installation failed." >&2
       fi
     fi
 
-    if ! npm list -g --depth=0 @tobilu/qmd >/dev/null 2>&1; then
+    if ! npm --prefix "$npm_global" list -g --depth=0 @tobilu/qmd >/dev/null 2>&1; then
       echo "==> Installing qmd for pi-memory search..."
-      if ! npm install -g @tobilu/qmd; then
+      if ! npm --prefix "$npm_global" install -g @tobilu/qmd; then
         echo "WARN: qmd installation failed." >&2
       fi
     fi
@@ -184,6 +159,22 @@ install_fonts() {
   fi
 }
 
+require_stow() {
+  if ! command -v stow >/dev/null 2>&1; then
+    echo "ERROR: GNU Stow is required to link dotfiles from this repo." >&2
+    echo "Install packages from os-requirements.txt first (including stow), then rerun install.sh." >&2
+    exit 1
+  fi
+}
+
+stow_package() {
+  local package_dir="$1" target_dir="$2"
+  shift 2
+  echo "Stowing $package_dir into $target_dir"
+  mkdir -p "$target_dir"
+  stow --dir="$DOTFILES_DIR" --target="$target_dir" --restow "$@" "$package_dir"
+}
+
 link() {
   local src="$1" dst="$2"
   echo "Linking $dst -> $src"
@@ -191,19 +182,10 @@ link() {
   ln -sfn "$src" "$dst"
 }
 
-# Top-level dotfiles
-link "$DOTFILES_DIR/home/.zshrc" "$TARGET_HOME/.zshrc"
+require_stow
 
-# Pi agent config
-if [[ -f "$DOTFILES_DIR/home/.pi/agent/settings.json" ]]; then
-  link "$DOTFILES_DIR/home/.pi/agent/settings.json" "$TARGET_HOME/.pi/agent/settings.json"
-fi
-if [[ -f "$DOTFILES_DIR/home/.pi/agent/pi-vcc-config.json" ]]; then
-  link "$DOTFILES_DIR/home/.pi/agent/pi-vcc-config.json" "$TARGET_HOME/.pi/agent/pi-vcc-config.json"
-fi
-if [[ -f "$DOTFILES_DIR/home/.pi/web-search.json" ]]; then
-  link "$DOTFILES_DIR/home/.pi/web-search.json" "$TARGET_HOME/.pi/web-search.json"
-fi
+# Stow tracked home dotfiles except optional/special-case entries
+stow_package home "$TARGET_HOME" --ignore='^\.gitconfig$|^\.ssh($|/)|^\.zshrc\.bak\..*$'
 
 # Optional Git config
 if [[ -f "$DOTFILES_DIR/home/.gitconfig" ]]; then
@@ -221,14 +203,12 @@ if [[ -f "$DOTFILES_DIR/home/.gitconfig" ]]; then
     git config -f "$tmp_gitcfg" user.name "$git_name"
     git config -f "$tmp_gitcfg" user.email "$git_email"
 
-    link "$tmp_gitcfg" "$TARGET_HOME/.gitconfig"
+    mkdir -p "$TARGET_HOME"
+    cp "$tmp_gitcfg" "$TARGET_HOME/.gitconfig"
+    rm -f "$tmp_gitcfg"
   else
     echo "Skipping Git config; existing ~/.gitconfig left untouched."
   fi
-fi
-
-if [[ -f "$DOTFILES_DIR/home/.p10k.zsh" ]]; then
-  link "$DOTFILES_DIR/home/.p10k.zsh" "$TARGET_HOME/.p10k.zsh"
 fi
 
 # SSH config (GitHub-only config, no keys)
@@ -243,13 +223,11 @@ if [[ -f "$DOTFILES_DIR/home/.ssh/config" ]]; then
 fi
 
 # ~/.config subdirectories
-for dir in nvim lsd; do
-  if [[ -d "$DOTFILES_DIR/config/$dir" ]]; then
-    link "$DOTFILES_DIR/config/$dir" "$TARGET_HOME/.config/$dir"
-  fi
-done
+if [[ -d "$DOTFILES_DIR/config" ]]; then
+  stow_package config "$TARGET_HOME/.config"
+fi
 
-echo "Done. Your dotfiles are now linked into $HOME from $DOTFILES_DIR."
+echo "Done. Your dotfiles are now linked into $HOME from $DOTFILES_DIR using GNU Stow."
 
 install_tools_and_shell
 install_fonts

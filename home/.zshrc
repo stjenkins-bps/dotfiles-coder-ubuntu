@@ -29,6 +29,11 @@ export EDITOR=nvim
 export KUBE_EDITOR=nvim
 export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
 
+# Helpers
+npmg() {
+  npm --prefix "$HOME/.npm-global" "$@"
+}
+
 # Aliases
 alias tf='terraform'
 alias vi='nvim'

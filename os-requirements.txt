@@ -8,6 +8,7 @@ wget
 openssl
 zsh
 git
+stow
 neovim
 p7zip-full
 unzip
