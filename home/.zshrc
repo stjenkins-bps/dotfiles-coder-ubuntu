@@ -28,6 +28,7 @@ source ~/.zsh-vi-mode/zsh-vi-mode.plugin.zsh
 export EDITOR=nvim
 export KUBE_EDITOR=nvim
 export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
+export ARM_USE_MSI="false"
 
 # Helpers
 npmg() {
@@ -53,12 +54,13 @@ if [[ -z "${NVM_DIR:-}" ]]; then
     export NVM_DIR=/usr/local/nvm
   fi
 fi
+
 [ -n "${NVM_DIR:-}" ] && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 [ -n "${NVM_DIR:-}" ] && [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 
 # Execute Herdr (only when attached to a real interactive terminal;
 # herdr panics without a TTY, which was crashing non-interactive/
 # shell-integration login paths).
-if [[ -t 0 && -t 1 ]]; then
+if [[ -t 0 && -t 1 && -z "${HERDR_ENV:-}" ]]; then
   herdr
 fi
