@@ -24,22 +24,40 @@ if ok then
 end
 EOF
 
-" Use wl-clipboard explicitly
-let g:clipboard = {
-      \ 'name': 'wl-clipboard',
-      \ 'copy': {
-      \    '+': 'wl-copy',
-      \    '*': 'wl-copy',
-      \  },
-      \ 'paste': {
-      \    '+': 'wl-paste --no-newline',
-      \    '*': 'wl-paste --no-newline',
-      \  },
-      \ 'cache_enabled': 0,
-      \ }
-
-" Use system clipboard
-set clipboard+=unnamedplus
+" Clipboard provider: prefer OSC52 over SSH, otherwise wl-clipboard when available
+if exists('$SSH_TTY')
+  lua << EOF
+local ok, osc52 = pcall(require, 'vim.ui.clipboard.osc52')
+if ok then
+  vim.g.clipboard = {
+    name = 'OSC 52',
+    copy = {
+      ['+'] = osc52.copy('+'),
+      ['*'] = osc52.copy('*'),
+    },
+    paste = {
+      ['+'] = osc52.paste('+'),
+      ['*'] = osc52.paste('*'),
+    },
+  }
+  vim.opt.clipboard:append('unnamedplus')
+end
+EOF
+elseif executable('wl-copy') && executable('wl-paste')
+  let g:clipboard = {
+        \ 'name': 'wl-clipboard',
+        \ 'copy': {
+        \    '+': 'wl-copy',
+        \    '*': 'wl-copy',
+        \  },
+        \ 'paste': {
+        \    '+': 'wl-paste --no-newline',
+        \    '*': 'wl-paste --no-newline',
+        \  },
+        \ 'cache_enabled': 0,
+        \ }
+  set clipboard+=unnamedplus
+endif
 
 " Line numbers
 set number
