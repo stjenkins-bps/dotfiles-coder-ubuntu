@@ -2,6 +2,5 @@
 	insteadOf = http://github.com/
 [url "git@github.com:"]
 	insteadOf = https://github.com/
-[user]
-	email = stephenj@basspro.com
-	name = stjenkins-bps
+# Identity is configured interactively by install.sh; do not add a personal
+# or work identity to this shared template.
