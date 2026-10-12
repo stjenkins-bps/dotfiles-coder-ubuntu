@@ -4,3 +4,7 @@
 	insteadOf = https://github.com/
 # Identity is configured interactively by install.sh; do not add a personal
 # or work identity to this shared template.
+
+# Make a first push establish origin/<branch> as its upstream automatically.
+[push]
+	autoSetupRemote = true
